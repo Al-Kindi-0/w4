@@ -1,93 +1,96 @@
-// TODO: Import necessary libraries. Check cargo.toml and the documentation of the libraries.
-struct Freivald {
-    x: // Array/Vec of Fq,
-}
+#![allow(non_snake_case)]
+use std::ops::{Deref, Mul};
 
-impl Freivald {
-    // TODO: Create constructor for object
-    fn new(array_size: usize) -> Self {
-        todo!()
-        // Generate random number
-        // Populate vector with values r^i for i=0..matrix_size
-        // Return freivald value with this vector as its x value
-    }
+use ark_ff::{fields::Fp64, MontBackend, MontConfig, MontFp};
+use ark_std::rand::Rng;
 
-    // TODO: Add proper types to input matrices. Remember matrices should hold Fq values
-    fn verify(&self, matrix_a, matrix_b, supposed_ab) -> bool {
-        assert!(check_matrix_dimensions(matrix_a, matrix_b, supposed_ab));
-        todo!()
-        // TODO: check if a * b * x == c * x. Check algorithm to make sure order of operations are
-        // correct
-    }
+#[derive(MontConfig)]
+#[modulus = "17"]
+#[generator = "3"]
+pub struct FpConfigMont;
+pub type Fp = Fp64<MontBackend<FpConfigMont, 1>>;
 
-    // utility function to not have to instantiate Freivalds if you just want to make one
-    // verification.
-    // TODO: Add types for arguments
-    fn verify_once(matrix_a, matrix_b, supposed_ab) -> bool {
-        let freivald = Freivald::new(supposed_ab.nrows());
-        freivald.verify(matrix_a, matrix_b, supposed_ab)
+type Vector = Vec<Fp>;
+pub struct Matrix(Vec<Vector>);
+
+impl Deref for Matrix {
+    type Target = Vec<Vector>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
-// TODO: [Bonus] Modify code to increase your certainty that A * B == C by iterating over the protocol.
-// Note that you need to generate new vectors for new iterations or you'll be recomputing same
-// value over and over. No problem in changing data structures used by the algorithm (currently its a struct
-// but that can change if you want to)
 
+impl Mul<&Vector> for &Matrix {
+    type Output = Vector;
 
-// You can either do a test on main or just remove main function and rename this file to lib.rs to remove the
-// warning of not having a main implementation
+    fn mul(self, rhs: &Vector) -> Self::Output {
+        let mut result = Vector::new();
+        self.iter().for_each(|row| {
+            let product = row
+                .iter()
+                .zip(rhs.iter())
+                .fold(MontFp!(Fp, "0"), |acc, (a, b)| acc + *a * *b);
+            result.push(product);
+        });
+        result
+    }
+}
+#[test]
+fn test_mul() {
+    let a: Vector = vec![MontFp!(Fp, "3"), MontFp!(Fp, "4")];
+    let b: Vector = vec![MontFp!(Fp, "8"), MontFp!(Fp, "2")];
+    let c: Vector = vec![MontFp!(Fp, "1"), MontFp!(Fp, "5")];
+    let A = Matrix(vec![b, c]);
+
+    assert_eq!(vec![MontFp!(Fp, "15"), MontFp!(Fp, "6")], (&A * &a));
+}
+
+/// The following function takes as input 3 nxn-matrices A, B and C
+/// and it checks, using the IP of Frievald that A . B = C.
+///
+/// The checking is done from the point of view of a verifier who
+/// is checking the above claim made by an untrustworthy prover.
+/// The verfier would like to compute C, but prefers to delegate this computation
+/// to the prover. Thus the verifier would like to check the soudness of the above claim.
+/// To do so, the verifier samples a random field element r and computes the vector
+///  v := (1,r,r²,r³,...,r^(n-1))
+/// it then computes and accepts the claim if
+/// (A . (B . v) == C . v) == True
+///
+pub fn verify(A: &Matrix, B: &Matrix, C: &Matrix) -> bool {
+    // Generate the random field element r
+    let mut rng = ark_std::test_rng();
+    let r: Fp = rng.gen();
+
+    // Compute the vector v := (1, r, r^2,..., r^(n-1))
+    let mut v: Vector = Vec::with_capacity(A.len());
+    let mut cur: Fp = MontFp!(Fp, "1");
+    for _ in 0..A.len() {
+        v.push(cur);
+        cur *= r;
+    }
+
+    return A * &(B * &v) == C * &v;
+}
+
+#[test]
+fn test_frievald() {
+    let b: Vector = vec![MontFp!(Fp, "8"), MontFp!(Fp, "2")];
+    let c: Vector = vec![MontFp!(Fp, "1"), MontFp!(Fp, "5")];
+    let a: Vector = vec![MontFp!(Fp, "3"), MontFp!(Fp, "4")];
+    let d: Vector = vec![MontFp!(Fp, "9"), MontFp!(Fp, "2")];
+
+    let A = Matrix(vec![b, c]);
+    let B = Matrix(vec![a, d]);
+    let C = Matrix(vec![
+        vec![MontFp!(Fp, "8"), MontFp!(Fp, "2")],
+        vec![MontFp!(Fp, "14"), MontFp!(Fp, "14")],
+    ]);
+
+    assert_eq!(verify(&A, &B, &C), true);
+}
+
 fn main() {
-    todo!()
-}
-
-// TODO: Add proper types to input matrices. Remember matrices should hold Fq values
-pub fn check_matrix_dimensions(matrix_a, matrix_b, supposed_ab) -> bool {
-    // TODO: Check if dimensions of making matrix_a * matrix_b matches values in supposed_ab.
-    // If it doesn't you know its not the correct result independently of matrix contents
-    todo!()
-}
-
-#[cfg(test)]
-mod tests {
-    // #[macro_use]
-    use lazy_static::lazy_static;
-    use rstest::rstest;
-
-    use super::*;
-
-    lazy_static! {
-        todo!("add matrices types and values")
-        static ref MATRIX_A: /* Type of matrix. Values should be fq */ = /* arbitrary matrix */;
-        static ref MATRIX_A_DOT_A: /* Type of matrix. Values should be fq */ = /* Correct result of A * A */;
-        static ref MATRIX_B: /* Type of matrix. Values should be fq */ = /* arbitrary matrix */;
-        static ref MATRIX_B_DOT_B: /* Type of matrix. Values should be fq */ = /* Correct result of B * B */;
-        static ref MATRIX_C: /* Type of matrix. Values should be fq */ = /* arbitrary LARGE matrix (at least 200, 200)*/;
-        static ref MATRIX_C_DOT_C: /* Type of matrix. Values should be fq */ = /* Correct result of C * C */;
-    }
-
-    #[rstest]
-    #[case(&MATRIX_A, &MATRIX_A, &MATRIX_A_DOT_A)]
-    #[case(&MATRIX_B, &MATRIX_B, &MATRIX_B_DOT_B)]
-    #[case(&MATRIX_C, &MATRIX_C, &MATRIX_C_DOT_C)]
-    fn freivald_verify_success_test(
-        #[case] matrix_a: /* Type of matrix. Values should be fq */,
-        #[case] matrix_b: /* Type of matrix. Values should be fq */,
-        #[case] supposed_ab: /* Type of matrix. Values should be fq */,
-    ) {
-        let freivald = Freivald::new(supposed_ab.nrows());
-        assert!(freivald.verify(matrix_a, matrix_b, supposed_ab));
-    }
-
-    #[rstest]
-    #[case(&MATRIX_A, &MATRIX_B, &MATRIX_A_DOT_A)]
-    #[case(&MATRIX_B, &MATRIX_A, &MATRIX_B_DOT_B)]
-    #[case(&MATRIX_C, &MATRIX_B, &MATRIX_C_DOT_C)]
-    fn freivald_verify_fail_test(
-        #[case] a: /* Type of matrix. Values should be fq */,
-        #[case] b: /* Type of matrix. Values should be fq */,
-        #[case] c: /* Type of matrix. Values should be fq */,
-    ) {
-        let freivald = Freivald::new(c.nrows());
-        assert!(!freivald.verify(a, b, c));
-    }
+    println!("Hello, world!");
 }
